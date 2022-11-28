@@ -8,6 +8,10 @@
         <Description>An Akka Persistence Module for SQL Databases using Linq2Db.</Description>
     </PropertyGroup>
 
+    <PropertyGroup>
+      <DefineConstants>USE_COMPILED_QUERIES</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup>
       <PackageReference Include="Akka" Version="$(AkkaVersion)" />
       <PackageReference Include="Akka.Persistence" Version="$(AkkaVersion)" />

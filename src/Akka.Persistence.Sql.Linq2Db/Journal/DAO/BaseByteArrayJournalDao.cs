@@ -29,12 +29,13 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
         protected readonly JournalConfig JournalConfig;
         protected readonly FlowPersistentReprSerializer<JournalRow> Serializer;
 
-        private readonly Lazy<object> _logWarnAboutLogicalDeletionDeprecation =
-            new(() => new object(), LazyThreadSafetyMode.None);
-
         protected readonly ILoggingAdapter Logger;
         private readonly Flow<JournalRow, Util.Try<(IPersistentRepresentation, IImmutableSet<string>, long)>, NotUsed> _deserializeFlow;
         private readonly Flow<JournalRow, Util.Try<ReplayCompletion>, NotUsed> _deserializeFlowMapped;
+
+#if USE_COMPILED_QUERIES
+        private static JournalQueries _queries = null;
+#endif
 
         protected BaseByteArrayJournalDao(
             IAdvancedScheduler scheduler,
@@ -50,6 +51,10 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             Serializer = serializer;
             _deserializeFlow = Serializer.DeserializeFlow();
             _deserializeFlowMapped = Serializer.DeserializeFlow().Select(MessageWithBatchMapper());
+
+#if USE_COMPILED_QUERIES
+            _queries ??= new JournalQueries(JournalConfig);
+#endif
             
             //Due to C# rules we have to initialize WriteQueue here
             //Keeping it here vs init function prevents accidental moving of init
@@ -155,6 +160,16 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             try
             {
                 await db.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+#if USE_COMPILED_QUERIES
+                if (xs.Count > JournalConfig.DaoConfig.MaxRowByRowSize)
+                {
+                    await _queries.InsertMultipleDefault(db, xs);
+                }
+                else
+                {
+                    await _queries.InsertMultipleMultiple(db, xs);
+                }
+#else
                 await db.GetTable<JournalRow>()
                     .BulkCopyAsync(
                         new BulkCopyOptions
@@ -165,6 +180,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                             UseParameters = JournalConfig.DaoConfig.PreferParametersOnMultiRowInsert,
                             MaxBatchSize = JournalConfig.DaoConfig.DbRoundTripBatchSize
                         }, xs);
+#endif
                 await db.CommitTransactionAsync();
             }
             catch (Exception e)
@@ -259,6 +275,24 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             var transaction = await db.BeginTransactionAsync();
             try
             {
+#if USE_COMPILED_QUERIES
+                _queries.MarkJournalMessagesAsDeleted(db, persistenceId, maxSequenceNr);
+                var maxMarkedDeletion = await _queries.MaxMarkedForDeletionMaxPersistenceId(db, persistenceId);
+
+                if (JournalConfig.DaoConfig.SqlCommonCompatibilityMode)
+                {
+                    await _queries.InsertOrUpdateMetadata(db, persistenceId, maxMarkedDeletion);
+                }
+
+                if (JournalConfig.DaoConfig.SqlCommonCompatibilityMode)
+                {
+                    await _queries.Delete(db, persistenceId, maxMarkedDeletion);
+                }
+                else
+                {
+                    await _queries.Delete(db, persistenceId, maxMarkedDeletion - 1);
+                }
+#else
                 await db.GetTable<JournalRow>()
                     .Where(r => r.PersistenceId == persistenceId && r.SequenceNumber <= maxSequenceNr)
                     .Set(r => r.Deleted, true)
@@ -287,7 +321,6 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                 await db.GetTable<JournalRow>()
                     .Where(r =>
                         r.PersistenceId == persistenceId &&
-                        r.SequenceNumber <= maxSequenceNr &&
                         r.SequenceNumber < maxMarkedDeletion)
                     .DeleteAsync();
 
@@ -299,6 +332,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                             r.SequenceNumber < maxMarkedDeletion)
                         .DeleteAsync();
                 }
+#endif
 
                 await transaction.CommitAsync();
             }
@@ -318,6 +352,8 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             }
         }
         
+#if USE_COMPILED_QUERIES
+#else
         protected IQueryable<long> MaxMarkedForDeletionMaxPersistenceIdQuery(
             DataConnection connection,
             string persistenceId)
@@ -327,6 +363,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                     .OrderByDescending(r => r.SequenceNumber)
                     .Select(r => r.SequenceNumber).Take(1);
         }
+#endif
 
         protected static readonly Expression<Func<JournalMetaData, PersistenceIdAndSequenceNumber>> MetaDataSelector = md =>
             new PersistenceIdAndSequenceNumber(md.SequenceNumber, md.PersistenceId);
@@ -334,23 +371,44 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
         protected static readonly Expression<Func<JournalRow, PersistenceIdAndSequenceNumber>> RowDataSelector = md =>
             new PersistenceIdAndSequenceNumber(md.SequenceNumber, md.PersistenceId);
         
-        private IQueryable<long?> MaxSeqNumberForPersistenceIdQuery(
-            DataConnection db, 
+#if USE_COMPILED_QUERIES
+        private Task<long?> MaxSeqNumberForPersistenceIdQuery(
+            DataConnection db,
             string persistenceId,
             long minSequenceNumber = 0)
         {
             if (minSequenceNumber != 0)
             {
-                return JournalConfig.DaoConfig.SqlCommonCompatibilityMode 
-                    ? MaxSeqForPersistenceIdQueryableCompatibilityModeWithMinId(db, persistenceId, minSequenceNumber) 
+                return JournalConfig.DaoConfig.SqlCommonCompatibilityMode
+                    ? _queries.MaxSeqForPersistenceIdWithMinIdCompatibilityMode(db, persistenceId, minSequenceNumber)
+                    : _queries.MaxSeqForPersistenceIdWithMinId(db, persistenceId, minSequenceNumber);
+            }
+
+            return JournalConfig.DaoConfig.SqlCommonCompatibilityMode
+                ? _queries.MaxSeqForPersistenceIdCompatibilityMode(db, persistenceId)
+                : _queries.MaxSeqForPersistenceId(db, persistenceId);
+        }
+#else
+        private IQueryable<long?> MaxSeqNumberForPersistenceIdQuery(
+            DataConnection db,
+            string persistenceId,
+            long minSequenceNumber = 0)
+        {
+            if (minSequenceNumber != 0)
+            {
+                return JournalConfig.DaoConfig.SqlCommonCompatibilityMode
+                    ? MaxSeqForPersistenceIdQueryableCompatibilityModeWithMinId(db, persistenceId, minSequenceNumber)
                     : MaxSeqForPersistenceIdQueryableNativeModeMinId(db, persistenceId, minSequenceNumber);
             }
-            
-            return JournalConfig.DaoConfig.SqlCommonCompatibilityMode 
-                ? MaxSeqForPersistenceIdQueryableCompatibilityMode(db, persistenceId) 
+
+            return JournalConfig.DaoConfig.SqlCommonCompatibilityMode
+                ? MaxSeqForPersistenceIdQueryableCompatibilityMode(db, persistenceId)
                 : MaxSeqForPersistenceIdQueryableNativeMode(db, persistenceId);
         }
+#endif            
 
+#if USE_COMPILED_QUERIES
+#else
         private static IQueryable<long?> MaxSeqForPersistenceIdQueryableNativeMode(
             DataConnection db,
             string persistenceId)
@@ -402,6 +460,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                     .Where(r => r.PersistenceId == persistenceId)
                     .Select(r => LinqToDB.Sql.Ext.Max<long?>(r.SequenceNumber).ToValue()));
         }
+#endif
 
         private static readonly Expression<Func<PersistenceIdAndSequenceNumber, long>> SequenceNumberSelector = r => 
             r.SequenceNumber;
@@ -419,23 +478,36 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
 
             await using var db = ConnectionFactory.GetConnection();
             
+#if USE_COMPILED_QUERIES
+            await _queries.Update(db, persistenceId, write.SequenceNr, serialize.Get().Message);
+#else
             await db.GetTable<JournalRow>()
                 .Where(r =>
                     r.PersistenceId == persistenceId &&
                     r.SequenceNumber == write.SequenceNr)
                 .Set(r => r.Message, serialize.Get().Message)
                 .UpdateAsync();
+#endif            
             
             return Done.Instance;
         }
 
+#if USE_COMPILED_QUERIES
         public async Task<long> HighestSequenceNr(string persistenceId, long fromSequenceNr)
         {
             await using var db = ConnectionFactory.GetConnection();
-            
+
+            return (await MaxSeqNumberForPersistenceIdQuery(db, persistenceId, fromSequenceNr)).GetValueOrDefault(0);
+        }
+#else
+        public async Task<long> HighestSequenceNr(string persistenceId, long fromSequenceNr)
+        {
+            await using var db = ConnectionFactory.GetConnection();
+
             return (await MaxSeqNumberForPersistenceIdQuery(db, persistenceId, fromSequenceNr).MaxAsync())
                 .GetValueOrDefault(0);
         }
+#endif        
 
         
 
@@ -456,6 +528,15 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             long toSequenceNr,
             long max)
         {
+#if USE_COMPILED_QUERIES
+            var query = max <= int.MaxValue 
+                ? _queries.SelectWithLimit(db, persistenceId, fromSequenceNr, toSequenceNr, (int) max)
+                : _queries.Select(db, persistenceId, fromSequenceNr, toSequenceNr);
+                
+            return Source.FromTask(query)
+                .SelectMany(r => r)
+                .Via(_deserializeFlowMapped);
+#else
             IQueryable<JournalRow> query = db.GetTable<JournalRow>()
                 .Where(r =>
                     r.PersistenceId == persistenceId &&
@@ -472,6 +553,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
             return Source.FromTask(query.ToListAsync())
                 .SelectMany(r => r)
                 .Via(_deserializeFlowMapped);
+#endif
             //return AsyncSource<JournalRow>.FromEnumerable(query,async q=>await q.ToListAsync())
             //    .Via(
             //        deserializeFlow).Select(MessageWithBatchMapper());
