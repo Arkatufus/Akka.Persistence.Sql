@@ -141,9 +141,8 @@ namespace Akka.Persistence.Sql.Linq2Db.Db
                 .HasColumnName(columnNames.SequenceNumber)
                 .Member(r => r.Timestamp)
                 .HasColumnName(columnNames.Created)
-                // TODO: Disabling this for now, will need a migration script to support this
                 .Member(r => r.WriteUuid)
-                .IsNotColumn();
+                .IsColumn();
 
             journalRowBuilder.Member(r => r.TagArr).IsNotColumn();
             //We can skip writing tags the old way by ignoring the column in mapping.

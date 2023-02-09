@@ -114,6 +114,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                             row.Identifier = serializer.Identifier;
                             row.SequenceNumber = representation.SequenceNr;
                             row.EventManifest = representation.Manifest;
+                            row.WriteUuid = representation.WriterGuid;
                                 
                             return new Try<JournalRow>(row);
                         });
@@ -146,7 +147,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                             manifest: t.EventManifest ?? t.Manifest, 
                             isDeleted: t.Deleted, 
                             sender: ActorRefs.NoSender,
-                            writerGuid: null, 
+                            writerGuid: t.WriteUuid, 
                             timestamp: t.Timestamp),
                         t.Tags?
                             .Split(_separatorArray, StringSplitOptions.RemoveEmptyEntries)
@@ -163,7 +164,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Dao
                         manifest: t.EventManifest ?? t.Manifest, 
                         isDeleted: t.Deleted,
                         sender: ActorRefs.NoSender,
-                        writerGuid: null,
+                        writerGuid: t.WriteUuid,
                         timestamp: t.Timestamp),
                     t.Tags?
                         .Split(_separatorArray, StringSplitOptions.RemoveEmptyEntries)

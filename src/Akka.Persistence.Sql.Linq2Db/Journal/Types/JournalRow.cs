@@ -24,7 +24,7 @@ namespace Akka.Persistence.Sql.Linq2Db.Journal.Types
         
         public string[] TagArr { get; set; }
         
-        public Guid? WriteUuid { get; set; }
+        public string? WriteUuid { get; set; }
         
         public string EventManifest { get; set; }
     }
