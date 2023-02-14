@@ -19,7 +19,7 @@
     <FluentAssertionVersion>6.9.0</FluentAssertionVersion>
     <CoverletVersion>3.2.0</CoverletVersion>
     <RedisInsideVersion>3.3.0</RedisInsideVersion>
-    <FluentMigratorVersion>3.3.1</FluentMigratorVersion>
+    <FluentMigratorVersion>3.3.2</FluentMigratorVersion>
     
     <AkkaVersion>1.4.49</AkkaVersion>
     <AkkaHostingVersion>1.0.3</AkkaHostingVersion>
