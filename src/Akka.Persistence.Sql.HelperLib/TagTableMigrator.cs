@@ -101,19 +101,20 @@ namespace Akka.Persistence.Sql.HelperLib
                         var tagList = new List<JournalTagRow>();
                         foreach (var row in rows)
                         {
-                            var tags = row.Tags
-                                .Split(new[] { _separator }, StringSplitOptions.RemoveEmptyEntries)
+                            var tags = row.Tags?
+                                .Split([_separator], StringSplitOptions.RemoveEmptyEntries)
                                 .Where(s => !string.IsNullOrWhiteSpace(s));
 
-                            tagList.AddRange(
-                                tags.Select(
-                                    tag => new JournalTagRow
-                                    {
-                                        OrderingId = row.Ordering,
-                                        TagValue = tag,
-                                        SequenceNumber = row.SequenceNumber,
-                                        PersistenceId = row.PersistenceId,
-                                    }));
+                            if(tags is not null)
+                                tagList.AddRange(
+                                    tags.Select(
+                                        tag => new JournalTagRow
+                                        {
+                                            OrderingId = row.Ordering,
+                                            TagValue = tag,
+                                            SequenceNumber = row.SequenceNumber,
+                                            PersistenceId = row.PersistenceId,
+                                        }));
                         }
 
                         Console.WriteLine(

@@ -159,7 +159,7 @@ namespace Akka.Persistence.Sql.Journal.Dao
                                 timestamp: t.Timestamp),
                             t.Tags?
                                 .Split(_separatorArray, StringSplitOptions.RemoveEmptyEntries)
-                                .ToImmutableHashSet() ?? t.TagArray?.ToImmutableHashSet() ?? ImmutableHashSet<string>.Empty,
+                                .ToImmutableHashSet() ?? t.TagArray.ToImmutableHashSet(),
                             t.Ordering));
                 }
 
@@ -182,7 +182,7 @@ namespace Akka.Persistence.Sql.Journal.Dao
                             timestamp: t.Timestamp),
                         t.Tags?
                             .Split(_separatorArray, StringSplitOptions.RemoveEmptyEntries)
-                            .ToImmutableHashSet() ?? t.TagArray?.ToImmutableHashSet() ?? ImmutableHashSet<string>.Empty,
+                            .ToImmutableHashSet() ?? t.TagArray.ToImmutableHashSet(),
                         t.Ordering));
             }
             catch (Exception e)

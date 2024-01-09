@@ -4,6 +4,8 @@
 //  </copyright>
 // -----------------------------------------------------------------------
 
+using System;
+
 namespace Akka.Persistence.Sql.Journal.Types
 {
     public sealed class JournalRow
@@ -20,17 +22,17 @@ namespace Akka.Persistence.Sql.Journal.Types
 
         public byte[] Message { get; set; }
 
-        public string Tags { get; set; }
+        public string? Tags { get; set; }
 
         public string Manifest { get; set; }
 
         public int? Identifier { get; set; }
 
         // ReSharper disable once InconsistentNaming
-        public string[] TagArray { get; set; }
+        public string[] TagArray { get; set; } = Array.Empty<string>();
 
         public string WriterUuid { get; set; }
 
-        public string EventManifest { get; set; }
+        public string? EventManifest { get; set; }
     }
 }
