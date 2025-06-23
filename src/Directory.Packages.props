@@ -22,7 +22,9 @@
     <PackageVersion Include="Akka.Persistence.Query" Version="$(AkkaVersion)" />
     <PackageVersion Include="Akka.Serialization.Hyperion" Version="$(AkkaVersion)" />
     <PackageVersion Include="Akka.Streams" Version="$(AkkaVersion)" />
+    <PackageVersion Include="JetBrains.Profiler.SelfApi" Version="2.5.13" />
     <PackageVersion Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.6.0" />
   </ItemGroup>
   <!-- App dependencies -->
   <ItemGroup>
